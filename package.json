@@ -16,7 +16,7 @@
   "scripts": {
     "build": "ember build",
     "start": "ember server",
-    "test": "mocha -r node_modules/@cardstack/test-support/prepare-node-tests.js node_modules/@cardstack/test-support/node-test-runner.js"
+    "test": "mocha node-tests/run.js"
   },
   "dependencies": {
     "aws-sdk": "^2.50.0",
@@ -24,7 +24,8 @@
   },
   "devDependencies": {
     "@cardstack/eslint-config": "^0.0.14",
-    "@cardstack/test-support": "^0.0.14"
+    "@cardstack/test-support": "^0.0.15-alpha.1",
+    "mocha": "^3.4.1"
   },
   "engines": {
     "node": ">= 4"
