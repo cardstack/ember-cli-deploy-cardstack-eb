@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "aws-sdk": "^2.50.0",
+    "denodeify": "^1.2.1",
     "ember-cli-deploy-plugin": "^0.2.9"
   },
   "devDependencies": {
