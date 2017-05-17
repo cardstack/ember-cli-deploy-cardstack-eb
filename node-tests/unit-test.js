@@ -73,6 +73,13 @@ describe("Unit | Deploy Plugin", function() {
     expect(initialRevisions).to.deep.equal([{ revision: '1' }]);
   });
 
+  it.skip("creates new app", async function() {
+    plugin.beforeHook(context),
+    plugin.configure(context);
+    await plugin.setup(context);
+    await plugin.upload(context);
+  });
+
 });
 
 class MockClient {

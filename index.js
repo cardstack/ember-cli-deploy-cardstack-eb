@@ -34,7 +34,9 @@ module.exports = {
             secretAccessKey: pluginHelper.readConfig('secretAccessKey'),
             region: pluginHelper.readConfig('region')
           });
-        }
+        },
+
+        appDescription: 'Cardstack Hub'
       },
 
       requiredConfig: [
@@ -55,6 +57,14 @@ module.exports = {
         return {
           initialRevisions: this._revisions(await this._existingApp())
         };
+      },
+
+      async upload() {
+        let app = await this._existingApp();
+        if (!app) {
+          await this._createApp();
+        }
+
       },
 
       async fetchRevisions() {
@@ -84,7 +94,12 @@ module.exports = {
         })) : [];
       },
 
-
+      async _createApp() {
+        await this._eb.createApplication({
+          ApplicationName: this.readConfig('appName'),
+          Description: this.readConfig('appDescription')
+        });
+      },
 
     });
     return new DeployPlugin(options);
