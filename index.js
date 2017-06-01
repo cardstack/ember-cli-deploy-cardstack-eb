@@ -64,6 +64,8 @@ module.exports = {
         // stack.
         nodeVersion: "7.6.0",
 
+        instanceType: "t1.micro",
+
         bucket(context, pluginHelper) {
           return `${pluginHelper.readConfig('appName').replace(/[^a-zA-Z-]/g, '')}-${context.deployTarget}`;
         },
@@ -146,12 +148,17 @@ module.exports = {
             {
               Namespace: "aws:elasticbeanstalk:container:nodejs",
               OptionName: "NodeVersion",
-              Value: "7.6.0"
+              Value: this.readConfig('nodeVersion')
             },
             {
               Namespace: "aws:cloudformation:template:parameter",
               OptionName: "EnvironmentVariables",
               Value: keyValueList(this.readConfig('environmentVariables'))
+            },
+            {
+              "Namespace": "aws:autoscaling:launchconfiguration",
+              "OptionName": "InstanceType",
+              "Value": this.readConfig('instanceType')
             }
           ]
         };
