@@ -3,6 +3,10 @@
 const AWS = require('aws-sdk');
 const BasePlugin = require('ember-cli-deploy-plugin');
 const { wrap } = require('./wrap');
+const path = require('path');
+const fs = require('fs-extra');
+const archive = require('./archive');
+const crypto = require('crypto');
 
 module.exports = {
   name: 'ember-cli-deploy-cardstack-eb',
@@ -36,7 +40,21 @@ module.exports = {
           });
         },
 
-        appDescription: 'Cardstack Hub'
+        s3Client(context, pluginHelper) {
+          return new AWS.S3({
+            apiVersion: '2006-03-01',
+            accessKeyId: pluginHelper.readConfig('accessKeyId'),
+            secretAccessKey: pluginHelper.readConfig('secretAccessKey'),
+            region: pluginHelper.readConfig('region')
+          });
+        },
+
+        bucket(context, pluginHelper) {
+          return `${pluginHelper.readConfig('appName').replace(/[^a-zA-Z-]/g, '')}-${context.deployTarget}`;
+        },
+
+        appDescription: 'Cardstack Hub',
+        outputPath: path.join('tmp', 'cardstack-dist')
       },
 
       requiredConfig: [
@@ -45,6 +63,7 @@ module.exports = {
 
       setup() {
         this._eb = wrap(this.readConfig('beanstalkClient'));
+        this._s3 = wrap(this.readConfig('s3Client'));
       },
 
       async willDeploy() {
@@ -53,18 +72,42 @@ module.exports = {
         await this._existingApp();
       },
 
+      async build() {
+        let outputPath = this.readConfig('outputPath');
+        await fs.mkdirs(outputPath);
+        let bundlePath = path.join(outputPath, 'app.zip');
+        if (process.env.EMBER_CLI_REUSE_BUILD && await fs.exists(bundlePath)) {
+          return { cardstackBundle: bundlePath };
+        }
+        await archive(fs.createWriteStream(bundlePath), a => {
+          a.glob('**', {
+            cwd: process.cwd(),
+            ignore: ['tmp/**', 'dist/**']
+          });
+        });
+        return {
+          cardstackBundle: bundlePath
+        };
+      },
+
       async fetchInitialRevisions() {
         return {
           initialRevisions: this._revisions(await this._existingApp())
         };
       },
 
-      async upload() {
+      async upload(context) {
         let app = await this._existingApp();
         if (!app) {
           await this._createApp();
         }
-
+        if (await this._bucketExists()) {
+          this.log(`Found bucket ${this.readConfig('bucket')}`, { verbose: true });
+        } else {
+          this.log(`Need to create bucket ${this.readConfig('bucket')}`, { verbose: true });
+        }
+        return;
+        await this._createAppVersion(context);
       },
 
       async fetchRevisions() {
@@ -88,6 +131,20 @@ module.exports = {
         return this._cachedApp = existing;
       },
 
+      async _bucketExists() {
+        try {
+          await this._s3.headBucket({ Bucket: this.readConfig('bucket') });
+          return true;
+        } catch(err) {
+          // You can get a 403 here too, but only when you don't have
+          // permission to know if the bucket exists, which we would
+          // treat as an error anyway.
+          if (err.statusCode !== 404) {
+            throw err;
+          }
+        }
+      },
+
       _revisions(app) {
         return app ? app.Versions.map(revision => ({
           revision
@@ -98,6 +155,32 @@ module.exports = {
         await this._eb.createApplication({
           ApplicationName: this.readConfig('appName'),
           Description: this.readConfig('appDescription')
+        });
+      },
+
+      async _createAppVersion(context) {
+
+        await this._eb.createApplicationVersion({
+          ApplicationName: this.readConfig('appName'),
+          VersionLabel: await this._versionLabel(context),
+          Process: true,
+          SourceBundle: {
+            S3Bucket: `TODO`,
+            S3Key: `TODO`
+          }
+        });
+      },
+
+      _versionLabel(context) {
+        return new Promise(resolve => {
+          let hash = crypto.createHash('sha256');
+          hash.on('readable', () => {
+            let data = hash.read();
+            if (data) {
+              resolve(data.toString('hex'));
+            }
+          });
+          fs.createReadStream(context.cardstackBundle).pipe(hash);
         });
       },
 
