@@ -7,6 +7,7 @@ const path = require('path');
 const fs = require('fs-extra');
 const archive = require('./archive');
 const crypto = require('crypto');
+const gitRepoInfo = require('git-repo-info');
 
 module.exports = {
   name: 'ember-cli-deploy-cardstack-eb',
@@ -40,6 +41,8 @@ module.exports = {
           });
         },
 
+        // you can pass your own instanceof AWS.S3 as
+        // "s3Client" if you need to do something weird.
         s3Client(context, pluginHelper) {
           return new AWS.S3({
             apiVersion: '2006-03-01',
@@ -49,8 +52,24 @@ module.exports = {
           });
         },
 
+        // provide an object whose propeties will be available as
+        // environment variables in elastic beanstalk.
+        environmentVariables() {
+          return {};
+        },
+
+        // the version of node that will be used on elastic
+        // beanstalk. Not every version will work here, you need one
+        // that is supported by the most recent Node.js solution
+        // stack.
+        nodeVersion: "7.6.0",
+
         bucket(context, pluginHelper) {
           return `${pluginHelper.readConfig('appName').replace(/[^a-zA-Z-]/g, '')}-${context.deployTarget}`;
+        },
+
+        environmentName(context) {
+          return context.deployTarget;
         },
 
         appDescription: 'Cardstack Hub',
@@ -76,23 +95,24 @@ module.exports = {
         let outputPath = this.readConfig('outputPath');
         await fs.mkdirs(outputPath);
         let bundlePath = path.join(outputPath, 'app.zip');
-        if (process.env.EMBER_CLI_REUSE_BUILD && await fs.exists(bundlePath)) {
-          return { cardstackBundle: bundlePath };
-        }
-        await archive(fs.createWriteStream(bundlePath), a => {
-          a.glob('**', {
-            cwd: process.cwd(),
-            ignore: ['tmp/**', 'dist/**']
+        if (!process.env.EMBER_CLI_REUSE_BUILD || !(await fs.exists(bundlePath))) {
+          await archive(fs.createWriteStream(bundlePath), a => {
+            a.glob('**', {
+              cwd: process.cwd(),
+              dot: true,
+              ignore: ['tmp/**', 'dist/**', '.git/**', '.vagrant/**']
+            });
           });
-        });
+        }
         return {
-          cardstackBundle: bundlePath
+          cardstackBundle: bundlePath,
+          cardstackVersionLabel: await this._versionLabel(bundlePath)
         };
       },
 
       async fetchInitialRevisions() {
         return {
-          initialRevisions: this._revisions(await this._existingApp())
+          initialRevisions: await this._existingVersions()
         };
       },
 
@@ -104,16 +124,57 @@ module.exports = {
         if (await this._bucketExists()) {
           this.log(`Found bucket ${this.readConfig('bucket')}`, { verbose: true });
         } else {
-          this.log(`Need to create bucket ${this.readConfig('bucket')}`, { verbose: true });
+          this.log(`Need to create bucket ${this.readConfig('bucket')}`);
+          await this._createBucket();
         }
-        return;
+        await this._uploadBundle(context);
         await this._createAppVersion(context);
+      },
+
+      async activate(context) {
+        let solution = (await this._eb.listAvailableSolutionStacks({})).SolutionStackDetails.map(s => s.SolutionStackName).find(name => /64bit.*Linux.*Node\.js/i.test(name));
+        this.log(`Using solution stack ${solution}`, { verbose: true });
+        let revision = context.commandOptions.revision || context.cardstackVersionLabel;
+        let environmentName = this.readConfig('environmentName');
+
+        let params = {
+          ApplicationName: this.readConfig('appName'),
+          EnvironmentName: environmentName,
+          VersionLabel: revision,
+          SolutionStackName: solution,
+          OptionSettings: [
+            {
+              Namespace: "aws:elasticbeanstalk:container:nodejs",
+              OptionName: "NodeVersion",
+              Value: "7.6.0"
+            },
+            {
+              Namespace: "aws:cloudformation:template:parameter",
+              OptionName: "EnvironmentVariables",
+              Value: keyValueList(this.readConfig('environmentVariables'))
+            }
+          ]
+        };
+
+        if (await this._existingEnvironment(environmentName)) {
+          this.log(`Found existing environment ${environmentName}`, { verbose: true });
+          await this._eb.updateEnvironment(params);
+        } else {
+          this.log(`Need to create environment ${environmentName}`);
+          await this._eb.createEnvironment(params);
+        }
       },
 
       async fetchRevisions() {
         return {
-          revisions: this._revisions(await this._existingApp())
+          revisions: await this._existingVersions()
         };
+      },
+
+      async displayRevisions(context) {
+        for (let { Description, VersionLabel, DateCreated } of context.revisions) {
+          this.log(`${VersionLabel} | ${DateCreated} | ${Description}`);
+        }
       },
 
       async _existingApp() {
@@ -131,6 +192,13 @@ module.exports = {
         return this._cachedApp = existing;
       },
 
+      async _existingEnvironment(name) {
+        let results = await this._eb.describeEnvironments({
+          EnvironmentNames: [name]
+        });
+        return results.Environments[0];
+      },
+
       async _bucketExists() {
         try {
           await this._s3.headBucket({ Bucket: this.readConfig('bucket') });
@@ -145,12 +213,6 @@ module.exports = {
         }
       },
 
-      _revisions(app) {
-        return app ? app.Versions.map(revision => ({
-          revision
-        })) : [];
-      },
-
       async _createApp() {
         await this._eb.createApplication({
           ApplicationName: this.readConfig('appName'),
@@ -158,29 +220,76 @@ module.exports = {
         });
       },
 
-      async _createAppVersion(context) {
-
-        await this._eb.createApplicationVersion({
-          ApplicationName: this.readConfig('appName'),
-          VersionLabel: await this._versionLabel(context),
-          Process: true,
-          SourceBundle: {
-            S3Bucket: `TODO`,
-            S3Key: `TODO`
-          }
+      async _createBucket() {
+        await this._s3.createBucket({
+          Bucket: this.readConfig('bucket')
         });
       },
 
-      _versionLabel(context) {
+      async _uploadBundle(context) {
+        let params = {
+          Bucket: this.readConfig('bucket'),
+          Key: `app-${context.cardstackVersionLabel}.zip`,
+        };
+        try {
+          await this._s3.headObject(Object.assign({}, params));
+          this.log(`Already found object ${params.Key}`, { verbose: true });
+        } catch(err) {
+          if (err.statusCode !== 404) {
+            throw err;
+          }
+          this.log(`Uploading object ${params.Key}`, { verbose: true });
+          await this._s3.putObject({
+            Bucket: this.readConfig('bucket'),
+            Key: `app-${context.cardstackVersionLabel}.zip`,
+            Body: fs.createReadStream(context.cardstackBundle)
+          });
+        }
+      },
+
+      async _existingVersions() {
+        if (this._cachedVersions) {
+          return this._cachedVersions;
+        }
+        return this._cachedVersions = (await this._eb.describeApplicationVersions({
+          ApplicationName: this.readConfig('appName')
+        })).ApplicationVersions;
+      },
+
+      async _createAppVersion(context) {
+        let repoInfo = gitRepoInfo();
+        let desc;
+        if (repoInfo.sha) {
+          desc = `Built from commit ${repoInfo.sha}`;
+        }
+
+        let existing = (await this._existingVersions()).find(v => v.VersionLabel === context.cardstackVersionLabel);
+        if (!existing) {
+          await this._eb.createApplicationVersion({
+            ApplicationName: this.readConfig('appName'),
+            VersionLabel: context.cardstackVersionLabel,
+            Process: true,
+            Description: desc,
+            SourceBundle: {
+              S3Bucket: this.readConfig('bucket'),
+              S3Key: `app-${context.cardstackVersionLabel}.zip`,
+            }
+          });
+        } else {
+          this.log(`App version ${context.cardstackVersionLabel} already exists`, { verbose: true });
+        }
+      },
+
+      _versionLabel(bundlePath) {
         return new Promise(resolve => {
-          let hash = crypto.createHash('sha256');
+          let hash = crypto.createHash('sha1');
           hash.on('readable', () => {
             let data = hash.read();
             if (data) {
               resolve(data.toString('hex'));
             }
           });
-          fs.createReadStream(context.cardstackBundle).pipe(hash);
+          fs.createReadStream(bundlePath).pipe(hash);
         });
       },
 
@@ -188,3 +297,7 @@ module.exports = {
     return new DeployPlugin(options);
   }
 };
+
+function keyValueList(pojo) {
+  return Object.keys(pojo).map(key => `${key}=${pojo[key]}`).join(',');
+}
