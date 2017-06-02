@@ -67,11 +67,11 @@ module.exports = {
         instanceType: "t1.micro",
 
         bucket(context, pluginHelper) {
-          return `${pluginHelper.readConfig('appName').replace(/[^a-zA-Z-]/g, '')}-${context.deployTarget}`;
+          return `${pluginHelper.readConfig('appName').replace(/[^a-zA-Z0-9-]/g, '')}-${context.deployTarget}`;
         },
 
-        environmentName(context) {
-          return context.deployTarget;
+        environmentName(context, pluginHelper) {
+          return `${pluginHelper.readConfig('appName').replace(/[^a-zA-Z0-9-]/g, '')}-${context.deployTarget}`;
         },
 
         appDescription: 'Cardstack Hub',
@@ -163,6 +163,8 @@ module.exports = {
           ]
         };
 
+        await this._applicationVersionIsReady(params);
+
         if (await this._existingEnvironment(environmentName)) {
           this.log(`Found existing environment ${environmentName}`, { verbose: true });
           await this._eb.updateEnvironment(params);
@@ -181,6 +183,21 @@ module.exports = {
       async displayRevisions(context) {
         for (let { Description, VersionLabel, DateCreated } of context.revisions) {
           this.log(`${VersionLabel} | ${DateCreated} | ${Description}`);
+        }
+      },
+
+      async _applicationVersionIsReady({ ApplicationName, VersionLabel }) {
+        while (true) {
+          let response = await this._eb.describeApplicationVersions({ ApplicationName, VersionLabels: [ VersionLabel ] });
+          if (response.ApplicationVersions.length < 1) {
+            throw new Error(`Tried to check if ${VersionLabel} is ready but couldn't find it`);
+          }
+          let status = response.ApplicationVersions[0].Status;
+          if (status === 'PROCESSED') {
+            return;
+          }
+          this.log(`Waiting for ApplicationVersion ${VersionLabel} to be processed, currently in state ${status}`, { verbose: true });
+          await sleep(10000);
         }
       },
 
@@ -307,4 +324,10 @@ module.exports = {
 
 function keyValueList(pojo) {
   return Object.keys(pojo).map(key => `${key}=${pojo[key]}`).join(',');
+}
+
+function sleep(ms) {
+  return new Promise(resolve => {
+    setTimeout(resolve, ms);
+  });
 }
