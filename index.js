@@ -2,7 +2,6 @@
 
 const AWS = require('aws-sdk');
 const BasePlugin = require('ember-cli-deploy-plugin');
-const { wrap } = require('./wrap');
 const path = require('path');
 const fs = require('fs-extra');
 const archive = require('./archive');
@@ -83,8 +82,8 @@ module.exports = {
       ],
 
       setup() {
-        this._eb = wrap(this.readConfig('beanstalkClient'));
-        this._s3 = wrap(this.readConfig('s3Client'));
+        this._eb = this.readConfig('beanstalkClient');
+        this._s3 = this.readConfig('s3Client');
       },
 
       async willDeploy() {
@@ -114,7 +113,9 @@ module.exports = {
 
       async fetchInitialRevisions() {
         return {
-          initialRevisions: await this._existingVersions()
+          initialRevisions: (await this._existingVersions()).map(r => ({
+            revision: r.VersionLabel
+          }))
         };
       },
 
@@ -134,7 +135,7 @@ module.exports = {
       },
 
       async activate(context) {
-        let solution = (await this._eb.listAvailableSolutionStacks({})).SolutionStackDetails.map(s => s.SolutionStackName).find(name => /64bit.*Linux.*Node\.js/i.test(name));
+        let solution = (await this._eb.listAvailableSolutionStacks({}).promise()).SolutionStackDetails.map(s => s.SolutionStackName).find(name => /64bit.*Linux.*Node\.js/i.test(name));
         this.log(`Using solution stack ${solution}`, { verbose: true });
         let revision = context.commandOptions.revision || context.cardstackVersionLabel;
         let environmentName = this.readConfig('environmentName');
@@ -159,6 +160,11 @@ module.exports = {
               "Namespace": "aws:autoscaling:launchconfiguration",
               "OptionName": "InstanceType",
               "Value": this.readConfig('instanceType')
+            // },
+            // {
+            //   "Namespace": "aws:autoscaling:launchconfiguration",
+            //   "OptionName": "IamInstanceProfile",
+            //   "Value": "arn:aws:iam::845058332476:instance-profile/aws-elasticbeanstalk-ec2-role"
             }
           ]
         };
@@ -167,10 +173,10 @@ module.exports = {
 
         if (await this._existingEnvironment(environmentName)) {
           this.log(`Found existing environment ${environmentName}`, { verbose: true });
-          await this._eb.updateEnvironment(params);
+          await this._eb.updateEnvironment(params).promise();
         } else {
           this.log(`Need to create environment ${environmentName}`);
-          await this._eb.createEnvironment(params);
+          await this._eb.createEnvironment(params).promise();
         }
       },
 
@@ -188,7 +194,7 @@ module.exports = {
 
       async _applicationVersionIsReady({ ApplicationName, VersionLabel }) {
         while (true) {
-          let response = await this._eb.describeApplicationVersions({ ApplicationName, VersionLabels: [ VersionLabel ] });
+          let response = await this._eb.describeApplicationVersions({ ApplicationName, VersionLabels: [ VersionLabel ] }).promise();
           if (response.ApplicationVersions.length < 1) {
             throw new Error(`Tried to check if ${VersionLabel} is ready but couldn't find it`);
           }
@@ -205,7 +211,7 @@ module.exports = {
         if (this._cachedApp) { return this._cachedApp; }
         let appName = this.readConfig('appName');
         this.log('Listing existing applications...', { verbose: true });
-        let { Applications } = await this._eb.describeApplications({});
+        let { Applications } = await this._eb.describeApplications({}).promise();
         let existing = Applications.find(a => a.ApplicationName === appName);
         this.log(`Found ${Applications.length} applications`, { verbose: true });
         if (existing) {
@@ -219,13 +225,13 @@ module.exports = {
       async _existingEnvironment(name) {
         let results = await this._eb.describeEnvironments({
           EnvironmentNames: [name]
-        });
+        }).promise();
         return results.Environments[0];
       },
 
       async _bucketExists() {
         try {
-          await this._s3.headBucket({ Bucket: this.readConfig('bucket') });
+          await this._s3.headBucket({ Bucket: this.readConfig('bucket') }).promise();
           return true;
         } catch(err) {
           // You can get a 403 here too, but only when you don't have
@@ -241,13 +247,13 @@ module.exports = {
         await this._eb.createApplication({
           ApplicationName: this.readConfig('appName'),
           Description: this.readConfig('appDescription')
-        });
+        }).promise();
       },
 
       async _createBucket() {
         await this._s3.createBucket({
           Bucket: this.readConfig('bucket')
-        });
+        }).promise();
       },
 
       async _uploadBundle(context) {
@@ -256,7 +262,7 @@ module.exports = {
           Key: `app-${context.cardstackVersionLabel}.zip`,
         };
         try {
-          await this._s3.headObject(Object.assign({}, params));
+          await this._s3.headObject(Object.assign({}, params)).promise();
           this.log(`Already found object ${params.Key}`, { verbose: true });
         } catch(err) {
           if (err.statusCode !== 404) {
@@ -267,7 +273,7 @@ module.exports = {
             Bucket: this.readConfig('bucket'),
             Key: `app-${context.cardstackVersionLabel}.zip`,
             Body: fs.createReadStream(context.cardstackBundle)
-          });
+          }).promise();
         }
       },
 
@@ -277,7 +283,7 @@ module.exports = {
         }
         return this._cachedVersions = (await this._eb.describeApplicationVersions({
           ApplicationName: this.readConfig('appName')
-        })).ApplicationVersions;
+        }).promise()).ApplicationVersions;
       },
 
       async _createAppVersion(context) {
@@ -298,7 +304,7 @@ module.exports = {
               S3Bucket: this.readConfig('bucket'),
               S3Key: `app-${context.cardstackVersionLabel}.zip`,
             }
-          });
+          }).promise();
         } else {
           this.log(`App version ${context.cardstackVersionLabel} already exists`, { verbose: true });
         }

@@ -1,5 +1,4 @@
 const EBDeploy = require('..');
-const { wrapped } = require('../wrap');
 
 describe("Unit | Deploy Plugin", function() {
   let context;
@@ -51,7 +50,6 @@ describe("Unit | Deploy Plugin", function() {
   });
 
   it("can fetch initial revisions when there's no app", async function() {
-    config.beanstalkClient.apps = [];
     plugin.beforeHook(context),
     plugin.configure(context);
     await plugin.setup(context);
@@ -60,12 +58,8 @@ describe("Unit | Deploy Plugin", function() {
   });
 
   it("can fetch initial revisions when there's an app", async function() {
-    config.beanstalkClient.apps = [
-      {
-        ApplicationName: appName,
-        Versions: ['1']
-      }
-    ];
+    config.beanstalkClient.apps = [ appName ];
+    config.beanstalkClient.versions = ['1'];
     plugin.beforeHook(context),
     plugin.configure(context);
     await plugin.setup(context);
@@ -84,16 +78,28 @@ describe("Unit | Deploy Plugin", function() {
 
 class MockClient {
   constructor() {
-    this[wrapped] = true;
     this.apps = [];
+    this.versions = [];
     this.authorized = true;
   }
-  async describeApplications() {
+  describeApplications() {
     if (!this.authorized) {
       throw new Error("Not authorized");
     }
+    return this.response({
+      Applications: this.apps.map(ApplicationName => ({ ApplicationName }))
+    });
+  }
+  describeApplicationVersions() {
+    return this.response({
+      ApplicationVersions: this.versions.map(VersionLabel => ({ VersionLabel }))
+    });
+  }
+  response(value) {
     return {
-      Applications: this.apps
+      async promise() {
+        return value;
+      }
     };
   }
 }
