@@ -96,7 +96,7 @@ module.exports = {
         let outputPath = this.readConfig('outputPath');
         await fs.mkdirs(outputPath);
         let bundlePath = path.join(outputPath, 'app.zip');
-        if (!process.env.EMBER_CLI_REUSE_BUILD || !(await fs.exists(bundlePath))) {
+        if (!process.env.EMBER_CLI_DEPLOY_REUSE_BUILD || !(await fs.exists(bundlePath))) {
           await archive(fs.createWriteStream(bundlePath), a => {
             a.glob('**', {
               cwd: process.cwd(),
