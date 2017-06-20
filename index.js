@@ -71,6 +71,11 @@ module.exports = {
         // mounting the hub under a different prefix.
         healthCheckURL: '/content-types',
 
+        // optional list of { namespace, optionName, value } that will be included in the AWS environment's OptionSettings
+        optionSettings() {
+          return [];
+        },
+
         bucket(context, pluginHelper) {
           return `${clean(pluginHelper.readConfig('appName'))}-${clean(context.deployTarget)}`;
         },
@@ -177,7 +182,7 @@ module.exports = {
               "OptionName": "Application Healthcheck URL",
               "Value": this.readConfig("healthCheckURL")
             }
-          ]
+          ].concat(this.readConfig('optionSettings'))
         };
 
         await this._applicationVersionIsReady(params);
