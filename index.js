@@ -65,6 +65,12 @@ module.exports = {
 
         instanceType: "t1.micro",
 
+        // the endpoint that elasticbeanstalk will use for health
+        // monitoring in order to do rolling deployments and load
+        // balancing. The default works fine as long as you aren't
+        // mounting the hub under a different prefix.
+        healthCheckURL: '/content-types',
+
         bucket(context, pluginHelper) {
           return `${pluginHelper.readConfig('appName').replace(/[^a-zA-Z0-9-]/g, '')}-${context.deployTarget}`;
         },
@@ -160,11 +166,11 @@ module.exports = {
               "Namespace": "aws:autoscaling:launchconfiguration",
               "OptionName": "InstanceType",
               "Value": this.readConfig('instanceType')
-            // },
-            // {
-            //   "Namespace": "aws:autoscaling:launchconfiguration",
-            //   "OptionName": "IamInstanceProfile",
-            //   "Value": "arn:aws:iam::845058332476:instance-profile/aws-elasticbeanstalk-ec2-role"
+            },
+            {
+              "Namespace": "aws:elasticbeanstalk:application",
+              "OptionName": "Application Healthcheck URL",
+              "Value": this.readConfig("healthCheckURL")
             }
           ]
         };
