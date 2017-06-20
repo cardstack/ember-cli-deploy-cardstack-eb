@@ -72,11 +72,11 @@ module.exports = {
         healthCheckURL: '/content-types',
 
         bucket(context, pluginHelper) {
-          return `${pluginHelper.readConfig('appName').replace(/[^a-zA-Z0-9-]/g, '')}-${context.deployTarget}`;
+          return `${pluginHelper.readConfig('appName').replace(/_/g, '-').replace(/[^a-zA-Z0-9]/g, '')}-${context.deployTarget}`;
         },
 
         environmentName(context, pluginHelper) {
-          return `${pluginHelper.readConfig('appName').replace(/[^a-zA-Z0-9-]/g, '')}-${context.deployTarget}`;
+          return `${pluginHelper.readConfig('appName').replace(/_/g, '-').replace(/[^a-zA-Z0-9-]/g, '')}-${context.deployTarget}`;
         },
 
         appDescription: 'Cardstack Hub',
