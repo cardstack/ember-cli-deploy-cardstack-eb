@@ -35,3 +35,69 @@ By default the test suite will only run unit tests that don't really talk to AWS
 * `ember build`
 
 For more information on using ember-cli, visit [https://ember-cli.com/](https://ember-cli.com/).
+
+## Required IAM Policy
+
+Here's an example of a working IAM policy that enables all the features you might need to deploy an app with this plugin.
+
+```
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "Stmt1497",
+            "Effect": "Allow",
+            "Action": [
+             "elasticbeanstalk:Check*",
+             "elasticbeanstalk:Describe*",
+             "elasticbeanstalk:List*",
+             "elasticbeanstalk:RequestEnvironmentInfo",
+             "elasticbeanstalk:RetrieveEnvironmentInfo",
+             "ec2:Describe*",
+             "elasticloadbalancing:Describe*",
+             "autoscaling:Describe*",
+             "cloudwatch:Describe*",
+             "cloudwatch:List*",
+             "cloudwatch:Get*",
+             "s3:Get*",
+             "s3:List*",
+             "sns:Get*",
+             "sns:List*",
+             "cloudformation:Describe*",
+             "cloudformation:Get*",
+             "cloudformation:List*",
+             "cloudformation:Validate*",
+             "cloudformation:Estimate*",
+             "rds:Describe*",
+             "sqs:Get*",
+             "sqs:List*",
+             "autoscaling:SuspendProcesses",
+             "autoscaling:ResumeProcesses",
+             "autoscaling:UpdateAutoScalingGroup",
+             "autoscaling:CreateLaunchConfiguration",
+             "cloudformation:UpdateStack",
+             "ec2:AuthorizeSecurityGroupIngress",
+             "ec2:RevokeSecurityGroupIngress",
+             "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
+             "elasticbeanstalk:CreateStorageLocation",
+             "elasticbeanstalk:CreateApplicationVersion",
+             "elasticbeanstalk:CreateConfigurationTemplate",
+             "elasticbeanstalk:UpdateApplicationVersion",
+             "elasticbeanstalk:UpdateConfigurationTemplate",
+             "elasticbeanstalk:UpdateEnvironment",
+             "elasticbeanstalk:ValidateConfigurationSettings",
+             "s3:PutObject",
+             "s3:DeleteObject",
+             "s3:PutObjectAcl",
+             "s3:CreateBucket",
+             "s3:GetObject",
+             "s3:GetObjectAcl",
+             "s3:ListBucket"
+             ],
+            "Resource": [
+                "*"
+            ]
+        }
+    ]
+}
+```
