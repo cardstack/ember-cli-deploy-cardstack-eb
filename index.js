@@ -182,7 +182,11 @@ module.exports = {
               "OptionName": "Application Healthcheck URL",
               "Value": this.readConfig("healthCheckURL")
             }
-          ].concat(this.readConfig('optionSettings'))
+          ].concat(this.readConfig('optionSettings').map(o => ({
+            Namespace: o.namespace,
+            OptionName: o.optionName,
+            Value: o.value
+          })))
         };
 
         await this._applicationVersionIsReady(params);
