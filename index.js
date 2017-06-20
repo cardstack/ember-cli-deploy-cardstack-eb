@@ -158,6 +158,11 @@ module.exports = {
               Value: this.readConfig('nodeVersion')
             },
             {
+              Namespace: "aws:elasticbeanstalk:container:nodejs",
+              OptionName: "NodeCommand",
+              Value: `/opt/elasticbeanstalk/node-install/node-v${this.readConfig('nodeVersion')}-linux-x64/bin/node server.js`
+            },
+            {
               Namespace: "aws:cloudformation:template:parameter",
               OptionName: "EnvironmentVariables",
               Value: keyValueList(this.readConfig('environmentVariables'))
