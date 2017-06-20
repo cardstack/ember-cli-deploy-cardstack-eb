@@ -72,11 +72,11 @@ module.exports = {
         healthCheckURL: '/content-types',
 
         bucket(context, pluginHelper) {
-          return `${pluginHelper.readConfig('appName').replace(/_/g, '-').replace(/[^a-zA-Z0-9]/g, '')}-${context.deployTarget}`;
+          return `${clean(pluginHelper.readConfig('appName'))}-${clean(context.deployTarget)}`;
         },
 
         environmentName(context, pluginHelper) {
-          return `${pluginHelper.readConfig('appName').replace(/_/g, '-').replace(/[^a-zA-Z0-9-]/g, '')}-${context.deployTarget}`;
+          return `${clean(pluginHelper.readConfig('appName'))}-${clean(context.deployTarget)}`;
         },
 
         appDescription: 'Cardstack Hub',
@@ -342,4 +342,8 @@ function sleep(ms) {
   return new Promise(resolve => {
     setTimeout(resolve, ms);
   });
+}
+
+function clean(name) {
+  return name.replace(/_/g, '-').replace(/[^a-zA-Z0-9-]/g, '');
 }
